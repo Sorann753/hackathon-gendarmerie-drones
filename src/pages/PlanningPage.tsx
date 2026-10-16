@@ -65,6 +65,9 @@ export function PlanningPage({ onPrepare, onSettings }: { onPrepare: () => void;
   const previousWeather = useRef<WeatherInfo | null>(mission?.weather ?? null);
   const notify = (kind: Notice['kind'], text: string) => setNotice({ kind, message: text, id: ++noticeId.current });
   const invalidate = () => { setResult(null); setResultOpen(false); setMission(null); setSelected(null); };
+
+
+
   useEffect(() => () => setNavigationLocked(false), []);
   useEffect(() => { if (previousPrefs.current !== prefsKey) { previousPrefs.current = prefsKey; setSeparation(defaultConstraints.minimumVerticalSeparationMeters); setOverlap(defaultConstraints.maximumOverlapPercent ?? 20); if (previousCatalog.current !== JSON.stringify(catalog)) { previousCatalog.current = JSON.stringify(catalog); setModels(current => [...catalog, ...current.filter(model => !catalog.some(m => m.id === model.id))]); } invalidate(); } }, [prefsKey]);
   useEffect(() => { if (previousAuthorization.current !== authorizationKey) { previousAuthorization.current = authorizationKey; setAuthorization(draftAuthorization); invalidate(); } }, [authorizationKey]);
@@ -78,41 +81,62 @@ export function PlanningPage({ onPrepare, onSettings }: { onPrepare: () => void;
     const timer = setTimeout(() => { void getWeather(center[1], center[0], dateTime, { signal: controller.signal }).then(next => { if (!controller.signal.aborted) { if (previousWeather.current && ((previousWeather.current.rainDetected === true) !== (next.rainDetected === true) || previousWeather.current.dayNight !== next.dayNight)) invalidate(); previousWeather.current = next; setWeather(next); setLoadingWeather(false); } }); }, 600);
     return () => { clearTimeout(timer); controller.abort(); };
   }, [when, center[0], center[1]]);
+
+
+
   function configuration() {
     const date = new Date(when);
     if (!when || !Number.isFinite(date.getTime()) || localInput(date) !== when) throw new Error('Complétez la date française et l’heure.');
     if (!name.trim()) throw new Error('Renseignez le nom de la mission.');
     return { location: [...center] as Coordinates, scheduledAt: date.toISOString() };
   }
+
   function planningInput(): PlanningInput {
     const { location, scheduledAt } = configuration();
     if (!operationZone) throw new Error('Terminez d’abord le dessin de la zone d’opération.');
-    return { missionId: missionId.current, location, scheduledAt, operationZone, priorityZones,
+    return {
+      missionId: missionId.current, location, scheduledAt, operationZone, priorityZones,
       weather: weather ?? { status: 'unavailable', location, dateTime: scheduledAt, rainDetected: null, dayNight: getDayNight(location[1], location[0], scheduledAt), source: null },
       constraints: { environment, minimumVerticalSeparationMeters: separation, maximumOverlapPercent: overlap, defaultWorkingAngleDegrees: 360, capabilityId, ...(authorization ? { authorization } : {}) }, catalog: models, capabilityId,
-      availableResources: { dronesByModel: Object.fromEntries(models.map(m => [m.id, 0])) } };
+      availableResources: { dronesByModel: Object.fromEntries(models.map(m => [m.id, 0])) }
+    };
   }
+
   function savePlan(proposed: PlanningResult, input: PlanningInput, preserveResources = false) {
     const now = new Date().toISOString();
-    const next: Mission = { schemaVersion: '1.0', metadata: { id: missionId.current, name: name.trim(), createdAt: saved.current?.metadata.createdAt ?? now, updatedAt: now }, scheduledAt: input.scheduledAt, location: input.location,
+    const next: Mission = {
+      schemaVersion: '1.0', metadata: { id: missionId.current, name: name.trim(), createdAt: saved.current?.metadata.createdAt ?? now, updatedAt: now }, scheduledAt: input.scheduledAt, location: input.location,
       operationZone: input.operationZone, priorityZones: input.priorityZones, weather: input.weather, constraints: input.constraints, estimate: proposed.estimate,
-      availableResources: preserveResources && saved.current ? structuredClone(saved.current.availableResources) : { dronesByModel: { ...proposed.estimate.dronesByModel } }, droneCatalog: structuredClone(models), pilots: proposed.pilots, drones: proposed.drones, status: 'planned' };
+      availableResources: preserveResources && saved.current ? structuredClone(saved.current.availableResources) : { dronesByModel: { ...proposed.estimate.dronesByModel } }, droneCatalog: structuredClone(models), pilots: proposed.pilots, drones: proposed.drones, status: 'planned'
+    };
     setResult(proposed); setMission(next); saved.current = next;
   }
+
   function startDrawing(kind: 'operation' | 'priority') {
     if (drawing) return;
     if (kind === 'priority' && !operationZone) { notify('error', 'Définissez d’abord la zone d’opération.'); return; }
     invalidate(); setPanel(null); setFleetOpen(false); setNotice(null); verticesRef.current = []; setVertices([]); setDrawing(kind); setNavigationLocked(true);
   }
+
   function addVertex(point: Coordinates) {
     const current = verticesRef.current;
     if (current.length >= 300) { notify('warning', '300 sommets maximum. Terminez ou annulez.'); return; }
     if (current.length && distanceMeters(current.at(-1)!, point) < 1) return;
     verticesRef.current = [...current, point]; setVertices(verticesRef.current);
   }
-  function cancelDrawing() { verticesRef.current = []; setVertices([]); setDrawing(null); setNavigationLocked(false); setPanel('zones'); notify('info', 'Dessin annulé. Les zones validées sont conservées.'); }
+
+  function cancelDrawing() {
+    verticesRef.current = [];
+    setVertices([]);
+    setDrawing(null);
+    setNavigationLocked(false);
+    setPanel('zones');
+    notify('info', 'Dessin annulé. Les zones validées sont conservées.');
+  }
+  
   function finishDrawing() {
     if (!drawing) return;
+
     try {
       const geometry = closeDrawnPolygon(verticesRef.current);
       if (drawing === 'operation') { setOperationZone({ type: 'Feature', geometry, properties: { id: 'operation-1', name: 'Zone opération', kind: 'operation' } }); setPriorityZones(zones => zones.filter(z => z.geometry.coordinates[0]!.every(p => pointInPolygon(p, geometry)))); }
@@ -121,24 +145,38 @@ export function PlanningPage({ onPrepare, onSettings }: { onPrepare: () => void;
       notify('success', drawing === 'operation' ? 'Zone d’opération validée. Ajoutez une priorité ou calculez.' : 'Zone prioritaire validée.');
     } catch (error) { notify('error', `${message(error)} Vous pouvez continuer ou annuler le dessin.`); }
   }
+
   function calculate() {
     if (drawing) return;
-    try { const input = planningInput(); const estimate = estimateResources(input); const proposed = generatePlan({ ...input, availableResources: { dronesByModel: estimate.dronesByModel } }); savePlan(proposed, input); setPanel(null); setResultOpen(true); setFleetOpen(false); notify(proposed.drones.length ? 'success' : 'warning', `${proposed.drones.length} drone(s) proposé(s). Consultez l’estimation à droite.`); }
+
+    try {
+      const input = planningInput();
+      const estimate = estimateResources(input);
+      const proposed = generatePlan({ ...input, availableResources: { dronesByModel: estimate.dronesByModel } });
+      savePlan(proposed, input);
+      setPanel(null);
+      setResultOpen(true);
+      setFleetOpen(false);
+      notify(proposed.drones.length ? 'success' : 'warning', `${proposed.drones.length} drone(s) proposé(s). Consultez l’estimation à droite.`);
+    }
     catch (error) { notify('error', message(error)); }
   }
   const metrics = result ? computeCoverage(result) : null, drone = result?.drones.find(d => `drone:${d.id}` === selected), model = models.find(m => m.id === drone?.modelId);
   const tp1 = result?.pilots.filter(p => p.qualification === 'TP1' && result.drones.some(d => d.pilotId === p.id && hasCoverage(d))).length ?? 0, tp2 = result?.pilots.filter(p => p.qualification === 'TP2' && result.drones.some(d => d.pilotId === p.id && hasCoverage(d))).length ?? 0;
+
+
+
   return <MapWorkspace tools={[{ id: 'configuration', label: 'Mission', icon: '⚙' }, { id: 'zones', label: 'Zones', icon: '◇' }, { id: 'catalog', label: 'Drone', icon: '▦' }, { id: 'settings', label: 'Paramètres', icon: '⚙' }, { id: 'export', label: 'Export JSON', icon: '↥', disabled: !result || !mission, onActivate: () => setExportOpen(true) }]} panel={panel} onPanel={next => { if (next === 'settings') { onSettings(); return; } setPanel(next); if (window.matchMedia('(max-width: 1100px)').matches) setResultOpen(false); }} title={panel === 'catalog' ? 'Modèles de drones enregistrés' : panel === 'configuration' ? 'Configuration mission' : panel === 'drone' ? 'Zone de travail du drone' : 'Zones cartographiques'} locked={!!drawing}
     fleetOpen={fleetOpen} onFleet={() => { setResultOpen(false); setFleetOpen(open => !open); }} fleet={<FleetPanel drones={result?.drones ?? []} catalog={models} selected={selected} onSelect={id => { setSelected(id); setPanel('drone'); setResultOpen(false); if (window.matchMedia('(max-width: 1100px)').matches) setFleetOpen(false); }} onClose={() => setFleetOpen(false)} />}
     rightPanel={resultOpen && result && metrics ? <><MetricsPanel metrics={metrics} /><p className="proposal-summary">{tp1} TP1 · {tp2} TP2 · séparation {separation} m</p><div className="proposal-counts">{models.map(m => <div key={m.id}><span>{m.name}</span><strong>{result.estimate.dronesByModel[m.id] ?? 0}</strong></div>)}</div>{result.warnings.map((w, i) => <p key={i} className="notice warning">{w}</p>)}<details><summary>Comprendre la proposition</summary><ul>{result.estimate.assumptions.map(a => <li key={a}>{a}</li>)}</ul></details><div className="proposal-actions"><button onClick={() => setExportOpen(true)}>Exporter la mission JSON</button><button className="primary" disabled={loadingWeather} onClick={onPrepare}>Préparer l’opération →</button></div></> : undefined} rightPanelTitle="Estimation du dispositif" onRightPanelClose={() => setResultOpen(false)}
     status={<><strong>{name}</strong><span>01 · Planification</span><WeatherBadge weather={weather} loading={loadingWeather} /></>}
     panelContent={<>
       {panel === 'catalog' && <><p className="muted">Catalogue de cette mission · {models.length} modèle(s) enregistré(s).</p><p className="notice">Caractéristiques déclarées. La règle de mission reste : Matrice 4T uniquement la nuit ou sous la pluie.</p>{models.map(model => <article className="resource-card" key={model.id}><h3>{model.name}</h3><div className="drone-specifications"><dl>
-      <div><dt>Vol de nuit</dt><dd>{model.nightCapable ? 'Oui' : 'Non'}</dd></div>
-      <div><dt>Vol sous la pluie</dt><dd>{model.incompatibleWithRain ? 'Non' : 'Oui'}</dd></div>
-      <div><dt>Résistance au vent</dt><dd>{model.windResistanceMetersPerSecond === undefined ? 'Non renseignée' : `${model.windResistanceMetersPerSecond.toLocaleString('fr-FR')} m/s`}</dd></div>
-      <div><dt>Zoom</dt><dd>{model.zoom ?? 'Non renseigné'}</dd></div>
-    </dl></div></article>)}</>}
+        <div><dt>Vol de nuit</dt><dd>{model.nightCapable ? 'Oui' : 'Non'}</dd></div>
+        <div><dt>Vol sous la pluie</dt><dd>{model.incompatibleWithRain ? 'Non' : 'Oui'}</dd></div>
+        <div><dt>Résistance au vent</dt><dd>{model.windResistanceMetersPerSecond === undefined ? 'Non renseignée' : `${model.windResistanceMetersPerSecond.toLocaleString('fr-FR')} m/s`}</dd></div>
+        <div><dt>Zoom</dt><dd>{model.zoom ?? 'Non renseigné'}</dd></div>
+      </dl></div></article>)}</>}
       {panel === 'configuration' && <><label>Nom de mission<input value={name} onChange={e => { setName(e.target.value); invalidate(); }} maxLength={120} /></label><p className="location-label">⌖ {locationLabel}</p><p className="muted">{center[1].toFixed(5)}, {center[0].toFixed(5)}</p><FrenchDateTime value={when} onChange={next => { setWhen(next); invalidate(); }} /><p className="muted">Heure locale : {Intl.DateTimeFormat().resolvedOptions().timeZone}</p>
         <div className="planning-weather"><WeatherBadge weather={weather} loading={loadingWeather} /><p className="muted">Prévision automatique à la date et au lieu choisis.</p>{(weather?.dayNight === 'night' || weather?.rainDetected === true) && <p className="notice warning">Nuit ou pluie : seuls les Matrice 4T sont retenus.</p>}</div>
         <label>Environnement<select value={environment} onChange={e => { setEnvironment(e.target.value as Environment); invalidate(); }}><option value="urban">Urbain</option><option value="rural">Rural</option></select></label><label>Répartition télépilotes<select value={capabilityId} onChange={e => { setCapabilityId(e.target.value); invalidate(); }}><option value="mixed">Mix TP1 / TP2 · préférence TP1</option><option value="tp1-out-of-sight">TP1 seulement · 1 km max</option><option value="tp2-out-of-sight">TP2 seulement · 2 km max</option><option value="tp1-in-sight">TP1 en vue · 500 m max</option></select></label><p className="muted">Séparation {separation} m · chevauchement max {overlap} %. Modifiables dans Paramètres.</p><button className="primary wide" onClick={() => setPanel('zones')}>Définir les zones →</button></>}
@@ -147,7 +185,7 @@ export function PlanningPage({ onPrepare, onSettings }: { onPrepare: () => void;
     </>}
     floating={<><LocationSearch center={center} disabled={!!drawing} onError={text => notify('error', text)} onLocate={(point, label) => { if (drawing) return; if (point[0] !== center[0] || point[1] !== center[1]) invalidate(); setCenter(point); setRecenterKey(n => n + 1); setLocationLabel(label); notify('success', `Carte centrée sur ${label}.`); }} />
       {drawing ? <div className="drawing-bar" role="region" aria-label="Dessin en cours"><div><strong>{drawing === 'operation' ? 'Zone d’opération' : 'Zone prioritaire'}</strong><span>Premier point ou Terminer pour fermer</span></div><button className="primary" onClick={finishDrawing}>✓ Terminer</button><button onClick={cancelDrawing}>Annuler</button></div> : <div className="map-actionbar"><button className="primary" disabled={!operationZone || loadingWeather} onClick={calculate}>{result ? 'Recalculer l’estimation' : 'Calculer l’estimation'}</button><button disabled={!result || loadingWeather} onClick={onPrepare}>Préparer l’opération →</button>{result && <button onClick={() => { setResultOpen(true); setFleetOpen(false); }}>Voir l’estimation</button>}</div>}
-      <Notification notice={notice} onClose={() => setNotice(null)} />{exportOpen && mission && <ExportDialog defaultName={mission.metadata.name} onCancel={() => setExportOpen(false)} onConfirm={filename => { try { exportMission(mission, filename); setExportOpen(false); notify('success', `Fichier ${filename} exporté.`); } catch (error) { notify('error', message(error)); } }} />}</> }>
+      <Notification notice={notice} onClose={() => setNotice(null)} />{exportOpen && mission && <ExportDialog defaultName={mission.metadata.name} onCancel={() => setExportOpen(false)} onConfirm={filename => { try { exportMission(mission, filename); setExportOpen(false); notify('success', `Fichier ${filename} exporté.`); } catch (error) { notify('error', message(error)); } }} />}</>}>
     <MissionMap center={center} recenterKey={recenterKey} operationZone={operationZone} priorityZones={priorityZones} drawing={!!drawing} vertices={vertices} onVertex={addVertex} onFinish={finishDrawing} uncoveredPoints={metrics?.uncoveredPoints ?? []} drones={result?.drones ?? []} pilots={result?.pilots ?? []} selected={selected} onSelect={id => { setSelected(id); if (id.startsWith('drone:')) { setPanel('drone'); setResultOpen(false); if (window.matchMedia('(max-width: 1100px)').matches) setFleetOpen(false); } }} />
   </MapWorkspace>;
 }

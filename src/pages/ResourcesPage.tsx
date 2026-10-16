@@ -42,31 +42,71 @@ export function ResourcesPage({ onLaunch, onBack }: { onLaunch: () => void; onBa
   const models = mission.droneCatalog ?? DRONE_CATALOG;
   const insufficient = models.some(m => (mission.availableResources.dronesByModel[m.id] ?? 0) < (mission.estimate?.dronesByModel[m.id] ?? 0));
   const invalidate = () => { setPrepared(false); setResult(null); setResultOpen(false); setSelected(null); setPreview(null); setPlacingDroneId(null); setPreserveProposal(false); };
-  const update = (id: DroneModelId, count: number) => { if (!Number.isSafeInteger(count) || count < 0) return;
+  const update = (id: DroneModelId, count: number) => {
+    if (!Number.isSafeInteger(count) || count < 0) return;
     setMission({ ...mission, availableResources: { dronesByModel: { ...mission.availableResources.dronesByModel, [id]: count } } }); invalidate();
   };
-  const add = (model: DroneModel) => { const next = [...models, model]; validateDroneCatalog(next);
+  const add = (model: DroneModel) => {
+    const next = [...models, model]; validateDroneCatalog(next);
     setMission({ ...mission, droneCatalog: next, availableResources: { dronesByModel: { ...mission.availableResources.dronesByModel, [model.id]: 1 } }, estimate: mission.estimate ? { ...mission.estimate, dronesByModel: { ...mission.estimate.dronesByModel, [model.id]: 0 } } : null });
     invalidate(); setAdding(false); notify('success', `${model.name} ajouté : 1 unité disponible.`);
   };
-  function calculate() { if (!mission) return; try {
-    const current = { ...mission, weather: { ...mission.weather, dayNight: getDayNight(mission.location[1], mission.location[0], mission.scheduledAt) } };
-    const plan = preserveProposal && originalConstraints.current === JSON.stringify(current.constraints) && current.drones.filter(hasCoverage).every(drone => { const model = models.find(item => item.id === drone.modelId); return model && compatibleModel(model, current.weather); }) ? {
-      missionId: current.metadata.id, estimate: current.estimate!, operationZone: current.operationZone, priorityZones: current.priorityZones, pilots: current.pilots, drones: current.drones, warnings: inspectMission(current).warnings,
-    } : generatePlan(missionPlanningInput(current));
-    const next = retainAvailableDrones(applyPlan(current, plan));
-    setMission(next); setResult({ ...plan, drones: next.drones, pilots: next.pilots }); setPrepared(true); setPreview(null); setPanel(null); setResultOpen(true); setFleetOpen(false);
-    notify(plan.drones.length ? 'success' : 'warning', `${plan.drones.filter(hasCoverage).length} drone(s) prévus · ${next.drones.filter(d => d.status === 'reserve').length} en réserve.`);
-  } catch (error) { notify('error', error instanceof Error ? error.message : 'Calcul impossible.'); } }
-  function select(id: string) { setPreview(null); setSelected(id); setPanel('drone'); setResultOpen(false); setPlacingDroneId(null); if (window.matchMedia('(max-width: 1100px)').matches) setFleetOpen(false); }
-  function edit(change: MissionChange) { if (!mission || !result) return; try {
-    const next = editPreparedMission(mission, change);
-    setMission(next.mission); setResult({ ...result, drones: next.mission.drones, pilots: next.mission.pilots }); setPlacingDroneId(null); setPreview(null);
-    notify(next.conflicts.length ? 'warning' : 'success', next.conflicts.length ? 'Drone modifié. Résolvez les conflits avant lancement.' : 'Drone modifié ; couverture recalculée.');
-  } catch (error) { notify('error', error instanceof Error ? error.message : 'Modification impossible.'); } }
+
+
+
+  function calculate() {
+    if (!mission) return; try {
+      const current = { ...mission, weather: { ...mission.weather, dayNight: getDayNight(mission.location[1], mission.location[0], mission.scheduledAt) } };
+      const plan = preserveProposal && originalConstraints.current === JSON.stringify(current.constraints) && current.drones.filter(hasCoverage).every(drone => { const model = models.find(item => item.id === drone.modelId); return model && compatibleModel(model, current.weather); }) ? {
+        missionId: current.metadata.id, estimate: current.estimate!, operationZone: current.operationZone, priorityZones: current.priorityZones, pilots: current.pilots, drones: current.drones, warnings: inspectMission(current).warnings,
+      } : generatePlan(missionPlanningInput(current));
+      const next = retainAvailableDrones(applyPlan(current, plan));
+      setMission(next); setResult({ ...plan, drones: next.drones, pilots: next.pilots }); setPrepared(true); setPreview(null); setPanel(null); setResultOpen(true); setFleetOpen(false);
+      notify(plan.drones.length ? 'success' : 'warning', `${plan.drones.filter(hasCoverage).length} drone(s) prévus · ${next.drones.filter(d => d.status === 'reserve').length} en réserve.`);
+    } catch (error) { notify('error', error instanceof Error ? error.message : 'Calcul impossible.'); }
+  }
+
+  function select(id: string) {
+    setPreview(null);
+    setSelected(id);
+    setPanel('drone');
+    setResultOpen(false);
+    setPlacingDroneId(null);
+    if (window.matchMedia('(max-width: 1100px)').matches) {
+      setFleetOpen(false);
+    }
+  }
+
+  function edit(change: MissionChange) {
+    if (!mission || !result) return;
+
+    try {
+      const next = editPreparedMission(mission, change);
+      setMission(next.mission);
+      setResult({
+        ...result,
+        drones: next.mission.drones,
+        pilots: next.mission.pilots
+      });
+      setPlacingDroneId(null);
+      setPreview(null);
+      
+      if(next.conflicts.length){
+        notify('warning', 'Drone modifié. Résolvez les conflits avant lancement.');
+      }
+      else{
+        notify('success', 'Drone modifié ; couverture recalculée.');
+      }
+    }
+    catch (error) {
+      notify('error', error instanceof Error ? error.message : 'Modification impossible.');
+    }
+  }
+
   const drone = mission.drones.find(d => `drone:${d.id}` === selected);
   const maxAltitude = models.find(m => m.id === drone?.modelId)?.capabilities.find(c => c.id === drone?.capabilityId)?.maxAltitudeMetersAgl[mission.constraints.environment] ?? 0;
   const metrics = result && displayedMission ? computeCoverage({ ...result, drones: displayedMission.drones }) : null, conflicts = prepared && displayedMission ? detectConflicts(displayedMission) : [];
+
   return <MapWorkspace tools={[{ id: 'resources', label: 'Moyens', icon: '▤' }, { id: 'catalog', label: 'Drone', icon: '▦' }, { id: 'dispositif', label: 'Dispositif', icon: '◉', disabled: !prepared, active: resultOpen, onActivate: () => { setPreview(null); setResultOpen(open => !open); setPanel(null); setFleetOpen(false); } }, { id: 'export', label: 'Export JSON', icon: '↥', onActivate: () => setExportOpen(true) }]} panel={panel} onPanel={next => { if (next !== 'drone') setPreview(null); setPanel(next); if (window.matchMedia('(max-width: 1100px)').matches) setResultOpen(false); }} title={panel === 'catalog' ? 'Modèles de drones enregistrés' : panel === 'drone' ? 'Drone supplémentaire / réglages' : 'Ressources réelles'}
     fleetOpen={fleetOpen} onFleet={() => { setPreview(null); setResultOpen(false); setFleetOpen(open => !open); }} fleet={<FleetPanel drones={prepared ? displayedMission?.drones ?? [] : []} catalog={models} selected={selected} onSelect={select} onClose={() => setFleetOpen(false)} />}
     status={<><strong>{mission.metadata.name}</strong><span>02 · Ressources</span><WeatherBadge weather={mission.weather} /></>}

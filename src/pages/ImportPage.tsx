@@ -9,9 +9,28 @@ export function ImportPage({ onImported }: { onImported: () => void }) {
   const [json, setJson] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  function accept(mission: Mission) { setMission(mission); setDraftAuthorization(mission.constraints.authorization); setError(''); onImported(); }
-  function parse() { try { if (json.length > 2000000) throw new Error('JSON trop volumineux (maximum 2 Mo).'); accept(parseMission(json)); }
-    catch (err) { setError(err instanceof Error ? err.message : 'Mission JSON invalide.'); } }
+
+
+  function accept(mission: Mission) {
+    setMission(mission);
+    setDraftAuthorization(mission.constraints.authorization);
+    setError('');
+    onImported();
+  }
+
+  function parse() {
+    try {
+      if (json.length > 2000000) {
+        throw new Error('JSON trop volumineux (maximum 2 Mo).');
+      }
+      else {
+        accept(parseMission(json));
+      }
+    }
+    catch (err) { setError(err instanceof Error ? err.message : 'Mission JSON invalide.'); }
+  }
+
+
   return <section className="import-page"><p className="eyebrow">IMPORT MISSION</p><h1>Reprendre une mission</h1><p>Importez un JSON 1.0 puis vérifiez les ressources disponibles avant de lancer la simulation.</p>
     <div className="panel">{error && <p role="alert" className="notice error">{error}</p>}
       <label>Fichier mission JSON<input type="file" accept=".json,application/json" disabled={loading} onChange={async e => {

@@ -44,17 +44,48 @@ export function OperationsPage({ onResources }: { onResources: () => void }) {
   const maxAltitude = drone ? catalog.find(m => m.id === drone.modelId)?.capabilities.find(c => c.id === drone.capabilityId)?.maxAltitudeMetersAgl[mission.constraints.environment] ?? 0 : 0;
   const eventMessage = mission.status === 'completed' ? 'Retour simulé terminé : chaque drone engagé a rejoint son télépilote.'
     : mission.status === 'emergency' && !mission.drones.some(d => d.status === 'emergency_landing') ? 'Atterrissage d’urgence simulé terminé. Vous pouvez relancer l’opération.' : event;
-  function select(id: string) { setSelected(id); setPreview(null); setPlacingDroneId(null); setPanel('drone'); if (window.matchMedia('(max-width: 1100px)').matches) setFleetOpen(false); }
+
+
+
+  function select(id: string) {
+    setSelected(id);
+    setPreview(null);
+    setPlacingDroneId(null);
+    setPanel('drone');
+    if (window.matchMedia('(max-width: 1100px)').matches){
+      setFleetOpen(false);
+    }
+  }
+
   function apply(next: OperationsResult, description: string, duration?: number) {
-    setMission({ ...next.mission, metadata: { ...next.mission.metadata, updatedAt: new Date().toISOString() } });
-    setEvent(description); setExtraWarnings(next.warnings); setElapsed(duration ?? null); setPreview(null); setPlacingDroneId(null);
+    setMission({
+      ...next.mission,
+      metadata: {
+        ...next.mission.metadata,
+        updatedAt: new Date().toISOString()
+      }
+    });
+    setEvent(description);
+    setExtraWarnings(next.warnings);
+    setElapsed(duration ?? null);
+    setPreview(null);
+    setPlacingDroneId(null);
     notify('success', description);
   }
-  function change(change: MissionChange) { if (!mission) return; try {
-    const started = performance.now(), next = recalculateMission(mission, change);
-    apply(next, change.type === 'move_pilot' ? `${change.pilotId} déplacé ; drones conservés.` : `${change.droneId} modifié ; couverture et conflits recalculés.`, performance.now() - started);
-  } catch (error) { notify('error', error instanceof Error ? error.message : 'Modification impossible.'); } }
-  const titles: Record<string, string> = { drone: 'Drone / télépilote', information: 'Informations & couverture', actions: 'Conduite & actions' };
+
+  function change(change: MissionChange) {
+    if (!mission) return; try {
+      const started = performance.now(), next = recalculateMission(mission, change);
+      apply(next, change.type === 'move_pilot' ? `${change.pilotId} déplacé ; drones conservés.` : `${change.droneId} modifié ; couverture et conflits recalculés.`, performance.now() - started);
+    } catch (error) { notify('error', error instanceof Error ? error.message : 'Modification impossible.'); }
+  }
+
+  const titles: Record<string, string> = {
+    drone: 'Drone / télépilote',
+    information: 'Informations & couverture',
+    actions: 'Conduite & actions'
+  };
+
   return <MapWorkspace tools={[{ id: 'drone', label: 'Réglages', icon: '⌖' }, { id: 'information', label: 'Couverture', icon: 'i' }, { id: 'actions', label: 'Actions', icon: '⚑' }, { id: 'export', label: 'Export JSON', icon: '↥', onActivate: () => setExportOpen(true) }]}
     panel={panel} onPanel={next => { setPanel(next); if (next !== 'drone') setPreview(null); }} title={titles[panel ?? ''] ?? ''}
     fleetOpen={fleetOpen} onFleet={() => { setFleetOpen(open => !open); if (window.matchMedia('(max-width: 1100px)').matches) { setPanel(null); setPreview(null); } }}
@@ -63,7 +94,7 @@ export function OperationsPage({ onResources }: { onResources: () => void }) {
     panelContent={<>
       {panel === 'drone' && <>{drone ? <DroneControls key={`${drone.id}-${drone.status}`} drone={drone} modelName={catalog.find(m => m.id === drone.modelId)?.name ?? drone.modelId} separation={mission.constraints.minimumVerticalSeparationMeters} maxAltitude={maxAltitude} active={active} onChange={change} onPreview={setPreview} onPlace={() => { setPreview(null); setPlacingDroneId(drone.id); setPanel(null); setFleetOpen(false); }} />
         : pilot ? <><h3>{pilot.name}</h3><p className="muted">Télépilote {pilot.qualification} · {pilot.pilotPosition[1].toFixed(5)}, {pilot.pilotPosition[0].toFixed(5)}</p><p className="notice">Glissez le marqueur T pour déplacer uniquement le télépilote. La portée sera recalculée.</p></>
-        : <><p className="notice">Cliquez un marqueur D ou T sur la carte, ou choisissez un drone dans la flotte.</p><button onClick={() => setFleetOpen(true)}>Afficher la flotte</button></>}
+          : <><p className="notice">Cliquez un marqueur D ou T sur la carte, ou choisissez un drone dans la flotte.</p><button onClick={() => setFleetOpen(true)}>Afficher la flotte</button></>}
       </>}
       {panel === 'information' && <><MetricsPanel metrics={result.coverage} />{canPreview && <p className="notice">Métriques de l’aperçu. Validez le cap et l’angle pour sauvegarder.</p>}
         <p className="event-log" role="status">{eventMessage}{elapsed !== null ? ` Recalcul : ${elapsed.toFixed(0)} ms.` : ''}</p>
